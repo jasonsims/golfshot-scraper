@@ -1,10 +1,29 @@
 #!/usr/bin/python
+#
+# Author: sims.jrobert@gmail.com (Jason Sims)
+#
+# This code will pull all golfshot data from users listed in the users.cfg
+# file. After pulling this data it will store it in a local mongodb instance.
+#
+# TODO:
+# - Clean up code for readability.
+# - By default only pull golf data for rounds not already stored in mongo.
+# - Add some analytics for the golf data.
+# - Convert round date to use datetime
+#
+import ConfigParser
+import sys
 import pymongo
-from pymongo import MongoClient
+
+from dateutil import parser
+from display_tools.display_tools import TextOutput as output
 from HTMLParser import HTMLParser
+from pymongo import MongoClient
 from urllib2 import urlopen
 
-import pdb
+BASE_URL = 'http://golfshot.com/members/'
+CONFIG_FILE = './users.cfg'
+MONGO_SRV = 'mongodb://localhost'
 
 class HtmlListReader(HTMLParser):
   def __init__(self, url):
@@ -17,6 +36,8 @@ class HtmlListReader(HTMLParser):
     req = urlopen(url)
     self.feed(req.read())
 
+  # TODO: Figure out how to either refactor this epic conditionals or fit it
+  # within the 80 char limit.
   def handle_starttag(self, tag, attrs):
     if tag == 'tr' and attrs:
       self.current_round = attrs[0][1]
@@ -33,6 +54,8 @@ class HtmlListReader(HTMLParser):
     elif tag == 'div':
       self.page_data = False
 
+  # TODO: Figure out how to either refactor this epic conditionals or fit it
+  # within the 80 char limit.
   def handle_data(self, data):
     if self.in_list and data.strip() != '':
       self.round_data[self.current_round].append(data.strip())
@@ -40,45 +63,82 @@ class HtmlListReader(HTMLParser):
       self.pages.append(data.strip())
 
 class GolfShotExporter():
-  BASE_URL = 'http://golfshot.com/members/'
-  golfer_data = (
-    {
-      'jsims': {'id': '0367088530'},
-      'kstabe': {'id': '0987080730'},
-    })
 
   def __init__(self):
-    #self.connection = MongoClient()
-    #self.db = self.connection.gs_data
+    connection = pymongo.Connection(MONGO_SRV, safe=True)
+    db = connection.gs_data
+    self.rounds = db.rounds
+    self.config = initialize_config()
 
-    for golfer in self.golfer_data:
-      print 'Getting round data for %s' % golfer
+  def pull_golfshot_data(self, golfer_data):
+    """Read golfer data from Golfshot."""
+    for golfer in golfer_data:
+      output.header('Getting round data for %s' % golfer)
       self.golf_shot_reader = HtmlListReader(
-          '%s%s/rounds' % (self.BASE_URL, self.golfer_data[golfer]['id']))
-
+          '%s%s/rounds' % (BASE_URL, golfer_data[golfer]))
+      round_info = {}
       for page in self.golf_shot_reader.pages:
         data = HtmlListReader(
-            '%s%s/rounds?page=%s' % (self.BASE_URL, self.golfer_data[golfer]['id'], page))
+            '%s%s/rounds?page=%s' % (BASE_URL, golfer_data[golfer], page))
 
-        self.golfer_data[golfer].update(data.round_data)
+        round_info = self.write_to_db(golfer, data.round_data)
 
-  def WriteToDb(self):
-    print 'Writing new rounds to db...'
-    self.db.gs_data.insert(self.golfer_data)
+  @staticmethod
+  def normalize_round_data(round_data):
+    normalized_rounds = []
+    for info in round_data:
+      normalized_round_data = {}
+      # Hack to fix course names with & symbol in the name.
+      if len(round_data[info]) != 6:
+        continue
+
+      normalized_round_data['_id']      = info
+      normalized_round_data['date']     = parser.parse(round_data[info][0])
+      normalized_round_data['course']   = round_data[info][1]
+      normalized_round_data['score']    = int(round_data[info][2])
+      normalized_round_data['fwy']      = float(round_data[info][3])
+      normalized_round_data['gir']      = float(round_data[info][4])
+      normalized_round_data['putt_gir'] = float(round_data[info][5])
+
+      normalized_rounds.append(normalized_round_data)
+
+    return normalized_rounds
+
+  def write_to_db(self, golfer_name, round_data):
+    normalized_rounds = self.normalize_round_data(round_data)
+    for golf_round in normalized_rounds:
+      golf_round['golfer_name'] = golfer_name
+      try:
+        self.rounds.insert(golf_round)
+      except pymongo.errors.DuplicateKeyError:
+        output.warn('Skipping...round already exists in golfshot DB')
+        continue
+      except:
+        output.error('Unknown error occurred during DB insertion')
+        output.msg(sys.exc_info()[0])
+        continue
+
+      output.info('Successfully inserted round:')
+      output.dict(golf_round)
 
   def Run(self):
-    for golfer in self.golfer_data:
-      print '=%s =====' % golfer
-      for golf_round in self.golfer_data[golfer]:
-        if golf_round != 'id':
-          print golf_round, self.golfer_data[golfer][golf_round]
-
-    #self.WriteToDb()
+    self.pull_golfshot_data(dict(self.config.items('Golfers')))
 
 
 def main():
   golf_shot_export = GolfShotExporter()
   golf_shot_export.Run()
+
+def initialize_config():
+  """Initialize the golfshot config file."""
+  config = ConfigParser.ConfigParser()
+  try:
+    config.readfp(open(CONFIG_FILE))
+  except IOError as e:
+    print 'Error reading %s: %s' % (CONFIG_FILE, e)
+    exit(1)
+
+  return config
 
 
 if __name__ == '__main__':
