@@ -22,8 +22,7 @@ from pymongo import MongoClient
 from urllib2 import urlopen
 
 BASE_URL = 'http://golfshot.com/members/'
-CONFIG_FILE = './users.cfg'
-MONGO_SRV = 'mongodb://localhost'
+CONFIG_FILE = './golfshot.cfg'
 
 class HtmlListReader(HTMLParser):
   def __init__(self, url):
@@ -65,10 +64,11 @@ class HtmlListReader(HTMLParser):
 class GolfShotExporter():
 
   def __init__(self):
-    connection = pymongo.Connection(MONGO_SRV, safe=True)
+    self.config = initialize_config()
+    connection = pymongo.Connection(self.config.get('db', 'url'), safe=True)
     db = connection.gs_data
     self.rounds = db.rounds
-    self.config = initialize_config()
+
 
   def pull_golfshot_data(self, golfer_data):
     """Read golfer data from Golfshot."""
