@@ -8,15 +8,18 @@
  */
 var restify = require('restify'),
     stats   = require('./lib/statsRetriever'),
+    verify  = require('./lib/paramVerify'),
     server  = restify.createServer();
 
-server.get('/api/lowRounds', stats.lowRound);
-server.get('/api/highRounds', stats.highRound);
-server.get('/api/totalRounds', stats.totalRounds);
-server.get('/api/avgGir', stats.avgGir);
-server.get('/api/avgPuttGir', stats.avgPuttGir);
-server.get('/api/avgFairway', stats.avgFairway);
-server.get('/api/avgRoundScore', stats.avgRoundScore);
+server.use(restify.queryParser({ mapParams: true }));
+
+server.get('/api/lowRounds', verify.queryParams, stats.lowRound);
+server.get('/api/highRounds', verify.queryParams, stats.highRound);
+server.get('/api/totalRounds', verify.queryParams, stats.totalRounds);
+server.get('/api/avgGir', verify.queryParams, stats.avgGir);
+server.get('/api/avgPuttGir', verify.queryParams, stats.avgPuttGir);
+server.get('/api/avgFairway', verify.queryParams, stats.avgFairway);
+server.get('/api/avgRoundScore', verify.queryParams, stats.avgRoundScore);
 
 server.listen(8080, function() {
   console.log('%s is waiting for some shit at %s', server.name, server.url);
