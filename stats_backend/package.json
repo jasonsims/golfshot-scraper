@@ -1,0 +1,16 @@
+{
+  "name": "golfshot-REST",
+  "version": "0.0.1",
+  "author": "Jason Sims <sims.jrobert@gmail.com>",
+  "description": "RESTful service for accessing golfshot data in mongodb.",
+  "private": true,
+  "dependencies": {
+    "moment": "*",
+    "mongojs": "*",
+    "restify": "*"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=0.8"
+  }
+}
